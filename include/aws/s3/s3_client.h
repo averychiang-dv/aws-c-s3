@@ -98,6 +98,23 @@ typedef int(aws_s3_meta_request_receive_body_callback_fn)(
     void *user_data);
 
 /**
+ * Invoked to provide the body as it is sent.
+ *
+ * Return AWS_OP_SUCCESS to continue processing the request.
+ * Return AWS_OP_ERR to indicate failure and cancel the request.
+ */
+typedef int(aws_s3_meta_request_sent_body_callback_fn)(
+
+    /* The meta request that the callback is being issued for. */
+    struct aws_s3_meta_request *meta_request,
+
+    /* The body data for this chunk of the object. */
+    const struct aws_byte_cursor *body,
+
+    /* User data specified by aws_s3_meta_request_options.*/
+    void *user_data);
+
+/**
  * Invoked when the entire meta request execution is complete.
  */
 typedef void(aws_s3_meta_request_finish_fn)(
@@ -255,6 +272,8 @@ struct aws_s3_meta_request_options {
      * See `aws_s3_meta_request_receive_body_callback_fn`.
      */
     aws_s3_meta_request_receive_body_callback_fn *body_callback;
+
+    aws_s3_meta_request_sent_body_callback_fn *sent_callback;
 
     /**
      * Invoked when the entire meta request execution is complete.

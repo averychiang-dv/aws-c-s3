@@ -261,6 +261,7 @@ int aws_s3_meta_request_init_base(
     } else {
         meta_request->headers_callback = options->headers_callback;
         meta_request->body_callback = options->body_callback;
+        meta_request->sent_callback = options->sent_callback;
         meta_request->finish_callback = options->finish_callback;
     }
 
@@ -1095,6 +1096,12 @@ void aws_s3_meta_request_send_request_finish_default(
                 (void *)request,
                 response_status);
         } else {
+            if (meta_request->type == AWS_S3_META_REQUEST_TYPE_PUT_OBJECT) {
+                if (meta_request->sent_callback) {
+                    struct aws_byte_cursor body_buffer_byte_cursor = aws_byte_cursor_from_buf(&request->request_body);
+                    connection->request->meta_request->sent_callback(connection->request->meta_request, &body_buffer_byte_cursor, meta_request->user_data);
+                }
+            }
             finish_code = AWS_S3_CONNECTION_FINISH_CODE_SUCCESS;
         }
 
