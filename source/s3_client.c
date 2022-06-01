@@ -633,10 +633,16 @@ struct aws_s3_meta_request *aws_s3_client_make_meta_request(
     bool is_https = true;
     uint16_t port = 0;
 
+    struct aws_uri temp_uri;
+    AWS_ZERO_STRUCT(temp_uri);
+
+    aws_uri_init_parse(&temp_uri, client->allocator, &host_header_value);
+    const struct aws_byte_cursor *host_name_from_header_cursor = aws_uri_host_name(&temp_uri);
+
     if (options->endpoint != NULL) {
         const struct aws_byte_cursor *host_name_cursor = aws_uri_host_name(options->endpoint);
         if (host_name_cursor->len) {
-            if (!aws_byte_cursor_eq(host_name_cursor, &host_header_value)) {
+            if (!aws_byte_cursor_eq(host_name_cursor, host_name_from_header_cursor)) {
                 AWS_LOGF_ERROR(
                     AWS_LS_S3_CLIENT,
                     "id=%p Cannot create meta s3 request; 'Host' header does not match URI 'hostname'.",
@@ -663,7 +669,7 @@ struct aws_s3_meta_request *aws_s3_client_make_meta_request(
     {
         aws_s3_client_lock_synced_data(client);
 
-        struct aws_string *endpoint_host_name = aws_string_new_from_cursor(client->allocator, &host_header_value);
+        struct aws_string *endpoint_host_name = aws_string_new_from_cursor(client->allocator, host_name_from_header_cursor);
 
         struct aws_s3_endpoint *endpoint = NULL;
         struct aws_hash_element *endpoint_hash_element = NULL;
