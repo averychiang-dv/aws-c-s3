@@ -362,7 +362,7 @@ static int s_s3_copy_object_prepare_request(struct aws_s3_meta_request *meta_req
          * S3. */
         case AWS_S3_COPY_OBJECT_REQUEST_TAG_BYPASS: {
             message = aws_s3_message_util_copy_http_message_no_body(
-                meta_request->allocator, meta_request->initial_request_message, NULL, 0);
+                meta_request->allocator, meta_request->initial_request_message, NULL, 0, false);
             break;
         }
 
