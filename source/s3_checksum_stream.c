@@ -14,9 +14,31 @@ struct aws_checksum_stream {
     struct aws_input_stream *old_stream;
     struct aws_s3_checksum *checksum;
     struct aws_byte_buf checksum_result;
-    /* base64 encoded checksum of the stream, updated on destruction of sream */
+    /* base64 encoded checksum of the stream, updated at end of stream */
     struct aws_byte_buf *encoded_checksum_output;
+    bool checksum_finalized;
 };
+
+static int s_finalize_checksum(struct aws_checksum_stream *impl) {
+    if (impl->checksum_finalized) {
+        return AWS_OP_SUCCESS;
+    }
+
+    if (aws_checksum_finalize(impl->checksum, &impl->checksum_result, 0) != AWS_OP_SUCCESS) {
+        AWS_LOGF_ERROR(
+            AWS_LS_S3_CLIENT,
+            "Failed to calculate checksum with error code %d (%s).",
+            aws_last_error(),
+            aws_error_str(aws_last_error()));
+        aws_byte_buf_reset(&impl->checksum_result, true);
+        impl->checksum_finalized = true;
+        return aws_raise_error(AWS_ERROR_S3_CHECKSUM_CALCULATION_FAILED);
+    }
+    struct aws_byte_cursor checksum_result_cursor = aws_byte_cursor_from_buf(&impl->checksum_result);
+    AWS_FATAL_ASSERT(aws_base64_encode(&checksum_result_cursor, impl->encoded_checksum_output) == AWS_OP_SUCCESS);
+    impl->checksum_finalized = true;
+    return AWS_OP_SUCCESS;
+}
 
 static int s_aws_input_checksum_stream_seek(
     struct aws_input_stream *stream,
@@ -45,7 +67,18 @@ static int s_aws_input_checksum_stream_read(struct aws_input_stream *stream, str
     aws_byte_cursor_advance(&to_sum, original_len);
     /* If read failed, `aws_input_stream_read` will handle the error to restore the dest. No need to handle error here
      */
-    return aws_checksum_update(impl->checksum, &to_sum);
+    if (aws_checksum_update(impl->checksum, &to_sum)) {
+        return AWS_OP_ERR;
+    }
+    /* If we're at the end of the stream, compute and store the final checksum */
+    struct aws_stream_status status;
+    if (aws_input_stream_get_status(impl->old_stream, &status)) {
+        return AWS_OP_ERR;
+    }
+    if (status.is_end_of_stream) {
+        return s_finalize_checksum(impl);
+    }
+    return AWS_OP_SUCCESS;
 }
 
 static int s_aws_input_checksum_stream_get_status(struct aws_input_stream *stream, struct aws_stream_status *status) {
@@ -58,24 +91,22 @@ static int s_aws_input_checksum_stream_get_length(struct aws_input_stream *strea
     return aws_input_stream_get_length(impl->old_stream, out_length);
 }
 
-/* We take ownership of the old inputstream, and destroy it with this input stream. This is because we want to be able
+/* We take ownership of the old input stream, and destroy it with this input stream. This is because we want to be able
  * to substitute in the chunk_stream for the cursor stream currently used in s_s3_meta_request_default_prepare_request
  * which returns the new stream. So in order to prevent the need of keeping track of two input streams we instead
  * consume the cursor stream and destroy it with this one */
 static void s_aws_input_checksum_stream_destroy(struct aws_checksum_stream *impl) {
-    if (impl) {
-        int result = aws_checksum_finalize(impl->checksum, &impl->checksum_result, 0);
-        if (result != AWS_OP_SUCCESS) {
-            aws_byte_buf_reset(&impl->checksum_result, true);
-        }
-        AWS_ASSERT(result == AWS_OP_SUCCESS);
-        struct aws_byte_cursor checksum_result_cursor = aws_byte_cursor_from_buf(&impl->checksum_result);
-        AWS_FATAL_ASSERT(aws_base64_encode(&checksum_result_cursor, impl->encoded_checksum_output) == AWS_OP_SUCCESS);
-        aws_checksum_destroy(impl->checksum);
-        aws_input_stream_release(impl->old_stream);
-        aws_byte_buf_clean_up(&impl->checksum_result);
-        aws_mem_release(impl->allocator, impl);
+    if (!impl) {
+        return;
     }
+
+    /* Compute the checksum of whatever was read, if we didn't reach the end of the underlying stream. */
+    s_finalize_checksum(impl);
+
+    aws_checksum_destroy(impl->checksum);
+    aws_input_stream_release(impl->old_stream);
+    aws_byte_buf_clean_up(&impl->checksum_result);
+    aws_mem_release(impl->allocator, impl);
 }
 
 static struct aws_input_stream_vtable s_aws_input_checksum_stream_vtable = {

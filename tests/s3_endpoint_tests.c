@@ -23,7 +23,7 @@ static int s_test_s3_different_endpoints(struct aws_allocator *allocator, void *
 
     {
         struct aws_s3_meta_request_test_results meta_request_test_results;
-        AWS_ZERO_STRUCT(meta_request_test_results);
+        aws_s3_meta_request_test_results_init(&meta_request_test_results, allocator);
 
         struct aws_s3_tester_meta_request_options options = {
             .allocator = allocator,
@@ -32,7 +32,7 @@ static int s_test_s3_different_endpoints(struct aws_allocator *allocator, void *
             .validate_type = AWS_S3_TESTER_VALIDATE_TYPE_EXPECT_SUCCESS,
             .get_options =
                 {
-                    .object_path = g_s3_path_get_object_test_1MB,
+                    .object_path = g_pre_existing_object_1MB,
                 },
         };
 
@@ -42,7 +42,7 @@ static int s_test_s3_different_endpoints(struct aws_allocator *allocator, void *
 
     {
         struct aws_s3_meta_request_test_results meta_request_test_results;
-        AWS_ZERO_STRUCT(meta_request_test_results);
+        aws_s3_meta_request_test_results_init(&meta_request_test_results, allocator);
 
         struct aws_s3_tester_meta_request_options options = {
             .allocator = allocator,
@@ -52,7 +52,7 @@ static int s_test_s3_different_endpoints(struct aws_allocator *allocator, void *
             .bucket_name = &g_test_public_bucket_name,
             .get_options =
                 {
-                    .object_path = g_s3_path_get_object_test_1MB,
+                    .object_path = g_pre_existing_object_1MB,
                 },
         };
 

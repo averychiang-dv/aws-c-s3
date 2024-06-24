@@ -70,12 +70,12 @@ static int s_set_post_chunk_stream(struct aws_chunk_stream *parent_stream) {
     struct aws_byte_cursor checksum_result_cursor = aws_byte_cursor_from_buf(&parent_stream->checksum_result);
     if (parent_stream->checksum_result_output &&
         aws_byte_buf_init_copy_from_cursor(
-            parent_stream->checksum_result_output, aws_default_allocator(), checksum_result_cursor)) {
+            parent_stream->checksum_result_output, parent_stream->allocator, checksum_result_cursor)) {
         return AWS_OP_ERR;
     }
     if (aws_byte_buf_init(
             &parent_stream->post_chunk_buffer,
-            aws_default_allocator(),
+            parent_stream->allocator,
             final_chunk_cursor.len + parent_stream->checksum_header_name->len + colon_cursor.len +
                 checksum_result_cursor.len + post_trailer_cursor.len)) {
         goto error;
@@ -88,7 +88,7 @@ static int s_set_post_chunk_stream(struct aws_chunk_stream *parent_stream) {
         goto error;
     }
     struct aws_byte_cursor post_chunk_cursor = aws_byte_cursor_from_buf(&parent_stream->post_chunk_buffer);
-    parent_stream->current_stream = aws_input_stream_new_from_cursor(aws_default_allocator(), &post_chunk_cursor);
+    parent_stream->current_stream = aws_input_stream_new_from_cursor(parent_stream->allocator, &post_chunk_cursor);
     parent_stream->set_current_stream_fn = s_set_null_stream;
     return AWS_OP_SUCCESS;
 error:
@@ -127,13 +127,11 @@ static int s_aws_input_chunk_stream_read(struct aws_input_stream *stream, struct
     struct aws_stream_status status;
     AWS_ZERO_STRUCT(status);
     while (impl->current_stream != NULL && dest->len < dest->capacity) {
-        size_t start = dest->len;
         int err = aws_input_stream_read(impl->current_stream, dest);
         if (err) {
             return err;
         }
         if (aws_input_stream_get_status(impl->current_stream, &status)) {
-            dest->len = start;
             return AWS_OP_ERR;
         }
         if (status.is_end_of_stream && impl->set_current_stream_fn(impl)) {
@@ -153,6 +151,8 @@ static int s_aws_input_chunk_stream_get_status(struct aws_input_stream *stream, 
     }
     int res = aws_input_stream_get_status(impl->current_stream, status);
     if (res != AWS_OP_SUCCESS) {
+        /* Only when the current_stream is NULL, it is end of stream, as the current stream will be updated to feed to
+         * data */
         status->is_end_of_stream = false;
     }
     return res;
